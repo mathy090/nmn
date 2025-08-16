@@ -1,5 +1,6 @@
 // controllers/testController.js
 const TestRecord = require('../models/TestRecord');
+const User = require('../models/User');
 const { printReceipt } = require('../utils/printer');
 
 // Calculate fine based on alcohol level
@@ -110,6 +111,54 @@ const getTestRecords = async (req, res) => {
   }
 };
 
+// Get ALL test records (admin only)
+const getAllTestRecords = async (req, res) => {
+  try {
+    // Check if user is admin
+    const user = await User.findById(req.user.id);
+    if (user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Admins only.'
+      });
+    }
+    
+    const { page = 1, limit = 20, synced } = req.query;
+    
+    // Build query
+    const query = {};
+    if (synced !== undefined) {
+      query.synced = synced === 'true';
+    }
+    
+    // Execute query with pagination
+    const records = await TestRecord.find(query)
+      .populate('officerId', 'identifier firstName lastName badgeNumber')
+      .sort({ timestamp: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit)
+      .exec();
+    
+    // Get total count
+    const count = await TestRecord.countDocuments(query);
+    
+    res.status(200).json({
+      success: true,
+      count: records.length,
+      totalPages: Math.ceil(count / limit),
+      currentPage: page,
+      data: records
+    });
+  } catch (error) {
+    console.error('Get all test records error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve all test records',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 // Get single test record
 const getTestRecordById = async (req, res) => {
   try {
@@ -183,6 +232,7 @@ const printTestReceipt = async (req, res) => {
 module.exports = {
   createTestRecord,
   getTestRecords,
+  getAllTestRecords,
   getTestRecordById,
   printTestReceipt
 };
