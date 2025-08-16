@@ -7,6 +7,7 @@ const { validateTestRecord } = require('../middleware/validation');
 const { 
   createTestRecord,
   getTestRecords,
+  getAllTestRecords,
   getTestRecordById,
   printTestReceipt
 } = require('../controllers/testController');
@@ -17,6 +18,7 @@ router.use(protect);
 // Test record routes
 router.post('/', validateTestRecord, createTestRecord);
 router.get('/', getTestRecords);
+router.get('/all', getAllTestRecords); // Admin only
 router.get('/:id', getTestRecordById);
 router.post('/:id/print', printTestReceipt);
 
