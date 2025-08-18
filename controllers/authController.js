@@ -189,7 +189,7 @@ const getProfile = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      user
+       user
     });
   } catch (error) {
     console.error('Get profile error:', error);
@@ -225,6 +225,7 @@ const forgotPassword = async (req, res) => {
     if (!user) {
         // For security, don't reveal if email exists
         console.log(`Forgot password requested for non-existent email: ${email}`);
+        // Still send a success response to avoid enumeration
         return res.status(200).json({
             success: true,
             message: 'If your email is registered, you will receive a password reset link shortly.'
@@ -337,7 +338,7 @@ const resetPassword = async (req, res) => {
     res.status(200).json({
       success: true,
       message: 'Password reset successfully',
-      token: newToken // Include new token if auto-login desired
+       newToken // Include new token if auto-login desired
       // user: { ... } // Optionally include user info
     });
 
@@ -353,9 +354,9 @@ const resetPassword = async (req, res) => {
 
 // --- EXPORT ALL FUNCTIONS ---
 module.exports = {
-  signup,
-  login,
-  getProfile,
-  forgotPassword,
-  resetPassword
+  signup,          // Existing function
+  login,           // Existing function
+  getProfile,      // Existing function
+  forgotPassword,  // New function
+  resetPassword    // New function
 };
