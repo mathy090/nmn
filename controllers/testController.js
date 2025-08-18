@@ -1,16 +1,241 @@
-// --- SMART SYNC OFFLINE RECORDS ---
-/**
- * Sync Offline Records
- * 1. Receives an array of records from the frontend
- * 2. Filters out records that are already synced (based on a unique ID or timestamp)
- * 3. Processes and saves unsynced records to the database
- * 4. Returns a summary of synced records and any errors
- */
+// controllers/testController.js
+const TestRecord = require('../models/TestRecord');
+const User = require('../models/User');
+const { printReceipt } = require('../utils/printer');
+
+// --- HELPER FUNCTIONS ---
+const calculateFine = (alcoholLevel) => {
+  const level = parseFloat(alcoholLevel);
+  if (level <= 0.08) return 0;
+  else if (level <= 0.15) return 500;
+  else if (level <= 0.30) return 1000;
+  else return 2000;
+};
+
+const getFineDescription = (alcoholLevel) => {
+  const level = parseFloat(alcoholLevel);
+  if (level <= 0.08) return 'Within Legal Limit';
+  else if (level <= 0.15) return 'Exceeding Legal Limit (0.08-0.15 mg/L)';
+  else if (level <= 0.30) return 'High Alcohol Level (0.15-0.30 mg/L)';
+  else return 'Very High Alcohol Level (>0.30 mg/L)';
+};
+// --- END HELPER FUNCTIONS ---
+
+// --- CONTROLLER FUNCTIONS ---
+const createTestRecord = async (req, res) => {
+  try {
+    const {
+      idNumber,
+      gender,
+      identifier,
+      numberPlate,
+      alcoholLevel,
+      location,
+      deviceSerial,
+      notes
+    } = req.body;
+
+    if (!idNumber || !gender || !identifier || !numberPlate || 
+        alcoholLevel === undefined || !location || !deviceSerial) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields'
+      });
+    }
+
+    const level = parseFloat(alcoholLevel);
+    if (isNaN(level) || level < 0 || level > 1.0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid alcohol level. Must be between 0 and 1.0 mg/L'
+      });
+    }
+
+    let status = 'normal';
+    if (level > 0.08) status = 'exceeded';
+    else if (level < 0) status = 'invalid';
+
+    const fineAmount = calculateFine(level);
+
+    const officerId = req.user.id;
+
+    const testRecord = new TestRecord({
+      idNumber,
+      gender,
+      identifier,
+      numberPlate,
+      alcoholLevel: level,
+      fineAmount,
+      location,
+      deviceSerial,
+      status,
+      notes,
+      officerId,
+      source: 'mobile_app'
+    });
+
+    const savedRecord = await testRecord.save();
+    await savedRecord.populate('officerId', 'identifier firstName lastName badgeNumber');
+
+    res.status(201).json({
+      success: true,
+      message: 'Test record created successfully',
+       savedRecord
+    });
+  } catch (error) {
+    console.error('Create test record error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create test record',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+const getTestRecords = async (req, res) => {
+  try {
+    const { page = 1, limit = 20, synced } = req.query;
+    const query = { officerId: req.user.id };
+    if (synced !== undefined) query.synced = synced === 'true';
+
+    const records = await TestRecord.find(query)
+      .sort({ timestamp: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit)
+      .exec();
+
+    const count = await TestRecord.countDocuments(query);
+
+    res.status(200).json({
+      success: true,
+      count: records.length,
+      totalPages: Math.ceil(count / limit),
+      currentPage: page,
+       records
+    });
+  } catch (error) {
+    console.error('Get test records error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve test records',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+const getAllTestRecords = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Admins only.'
+      });
+    }
+
+    const { page = 1, limit = 20, synced } = req.query;
+    const query = {};
+    if (synced !== undefined) query.synced = synced === 'true';
+
+    const records = await TestRecord.find(query)
+      .populate('officerId', 'identifier firstName lastName badgeNumber')
+      .sort({ timestamp: -1 })
+      .limit(limit * 1)
+      .Skip((page - 1) * limit)
+      .exec();
+
+    const count = await TestRecord.countDocuments(query);
+
+    res.status(200).json({
+      success: true,
+      count: records.length,
+      totalPages: Math.ceil(count / limit),
+      currentPage: page,
+       records
+    });
+  } catch (error) {
+    console.error('Get all test records error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve all test records',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+const getTestRecordById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const user = await User.findById(req.user.id);
+    let query = { _id: id };
+    if (user.role !== 'admin') query.officerId = req.user.id;
+
+    const record = await TestRecord.findOne(query).populate('officerId', 'identifier firstName lastName badgeNumber');
+    if (!record) {
+      return res.status(404).json({
+        success: false,
+        message: 'Test record not found or access denied'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+       record
+    });
+  } catch (error) {
+    console.error('Get test record error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve test record',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+const printTestReceipt = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const user = await User.findById(req.user.id);
+    let query = { _id: id };
+    if (user.role !== 'admin') query.officerId = req.user.id;
+
+    const record = await TestRecord.findOne(query);
+    if (!record) {
+      return res.status(404).json({
+        success: false,
+        message: 'Test record not found or access denied'
+      });
+    }
+
+    const receiptData = {
+      ...record.toObject(),
+      officerName: `${user.firstName} ${user.lastName}`,
+      badgeNumber: user.badgeNumber
+    };
+
+    const printResult = await printReceipt(receiptData, 2);
+
+    record.receiptPrinted = true;
+    await record.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Receipt printed successfully',
+       printResult
+    });
+  } catch (error) {
+    console.error('Print receipt error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to print receipt',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 const syncOfflineRecords = async (req, res) => {
   try {
-    const records = req.body.records; // Expecting an array of record objects
-
-    // Validate input
+    const records = req.body.records;
     if (!Array.isArray(records)) {
       return res.status(400).json({
         success: false,
@@ -27,102 +252,63 @@ const syncOfflineRecords = async (req, res) => {
         });
     }
 
-    console.log(`Starting sync for ${records.length} records from user ${req.user.id}...`);
-
     let syncedCount = 0;
     let errors = [];
 
-    // Process each record
     for (const record of records) {
       try {
-        // --- VALIDATE RECORD ---
-        // Check for required fields (basic check)
         if (!record.idNumber || !record.gender || !record.identifier || !record.numberPlate ||
             record.alcoholLevel === undefined || !record.location || !record.deviceSerial) {
-          console.warn(`Skipping record due to missing fields:`, record);
           errors.push({
-            recordId: record.id || record.timestamp || 'unknown',
-            error: 'Missing required fields in record data'
-          });
-          continue; // Skip this record
+ recordId: record.id || record.timestamp || 'unknown', error: 'Missing required fields in record data' });
+          continue;
         }
 
-        // Validate alcohol level (rename 'level' to 'alcoholLevelFloat' to avoid conflict)
-        const alcoholLevelFloat = parseFloat(record.alcoholLevel);
-        if (isNaN(alcoholLevelFloat) || alcoholLevelFloat < 0 || alcoholLevelFloat > 1.0) {
-          console.warn(`Skipping record due to invalid alcohol level:`, record);
-          errors.push({
-            recordId: record.id || record.timestamp || 'unknown',
-            error: 'Invalid alcohol level in record data'
-          });
-          continue; // Skip this record
+        const level = parseFloat(record.alcoholLevel);
+        if (isNaN(level) || level < 0 || level > 1.0) {
+          Errors.push({ recordId: record.id || record.timestamp || 'Unknown', error: 'Invalid alcohol level in record data' });
+          continue;
         }
-        // --- END VALIDATE RECORD ---
 
-        // --- SMART SYNC LOGIC ---
-        // Check if record already exists in DB (prevent duplicates)
-        // We assume each record from the frontend has a unique `id` or `timestamp`
-        // You might need a more robust way to identify duplicates (e.g., hash of data)
         let existingRecord;
         if (record.id) {
-            // If frontend provides a unique ID
             existingRecord = await TestRecord.findOne({ id: record.id, officerId: req.user.id });
         } else if (record.timestamp) {
-            // If using timestamp (less reliable if multiple records per second)
             existingRecord = await TestRecord.findOne({ timestamp: record.timestamp, officerId: req.user.id });
         }
 
         if (existingRecord) {
-            // Record already exists, skip syncing
-            console.log(`Skipping duplicate/synced record ID: ${record.id || record.timestamp}`);
-            syncedCount++; // Count as "processed"
-            continue; // Move to the next record
+            syncedCount++;
+            continue;
         }
-        // --- END SMART SYNC LOGIC ---
 
-        // --- PROCESS AND SAVE NEW RECORD ---
-        // Determine status based on alcohol level (use renamed variable)
         let status = 'normal';
-        if (alcoholLevelFloat > 0.08) {
-          status = 'exceeded';
-        } else if (alcoholLevelFloat < 0) {
-          status = 'invalid';
-        }
+        if (level > 0.08) status = 'exceeded';
+        else if (level < 0) status = 'invalid';
 
-        // Calculate fine amount (use renamed variable)
-        const fineAmount = calculateFine(alcoholLevelFloat);
+        const fineAmount = calculateFine(level);
 
-        // Create new test record
         const testRecord = new TestRecord({
           idNumber: record.idNumber,
           gender: record.gender,
-          identifier: record.identifier, // Name/ID of the person tested
+          identifier: record.identifier,
           numberPlate: record.numberPlate,
-          alcoholLevel: alcoholLevelFloat, // Use renamed variable
+          alcoholLevel: level,
           fineAmount,
           location: record.location,
           deviceSerial: record.deviceSerial,
           status,
           notes: record.notes,
-          officerId: req.user.id, // Associate with the authenticated officer
-          timestamp: record.timestamp ? new Date(record.timestamp) : new Date(), // Use provided timestamp or current
-          source: record.source || 'mobile_app_offline_sync', // Indicate source
-          synced: true // Mark as synced upon successful creation
-          // receiptPrinted would be false by default
+          officerId: req.user.id,
+          timestamp: record.timestamp ? new Date(record.timestamp) : new Date(),
+          source: record.source || 'mobile_app_offline_sync',
+          synced: true
         });
 
         const savedRecord = await testRecord.save();
-        console.log(`Successfully synced record ID: ${savedRecord._id}`);
         syncedCount++;
-        // --- END PROCESS AND SAVE NEW RECORD ---
-
       } catch (recordError) {
-        console.error(`Error syncing individual record:`, recordError);
-        errors.push({
-          // Include identifying info if available
-          recordId: record.id || record.timestamp || 'unknown',
-          error: recordError.message || 'Unknown error during record sync'
-        });
+        Errors.push({ recordId: record.id || record.timestamp || 'Unknown', error: recordError.message || 'Unknown error during record sync' });
       }
     }
 
@@ -137,7 +323,6 @@ const syncOfflineRecords = async (req, res) => {
       totalProcessed: records.length,
       errors
     });
-
   } catch (error) {
     console.error('Sync offline records error:', error);
     res.status(500).json({
@@ -147,4 +332,83 @@ const syncOfflineRecords = async (req, res) => {
     });
   }
 };
-// --- END SMART SYNC OFFLINE RECORDS ---
+
+const createESP32TestRecord = async (req, res) => {
+  try {
+    const {
+      idNumber,
+      gender,
+      identifier,
+      numberPlate,
+      alcoholLevel,
+      location,
+      deviceSerial,
+      notes
+    } = req.body;
+
+    if (!idNumber || !gender || !identifier || !numberPlate || 
+        alcoholLevel === undefined || !location || !deviceSerial) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields'
+      });
+    }
+
+    const level = parseFloat(alcoholLevel);
+    if (isNaN(level) || level < 0 || level > 1.0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid alcohol level. Must be between 0 and 1.0 mg/L'
+      });
+    }
+
+    let status = 'normal';
+    if (level > 0.08) status = 'exceeded';
+    else if (level < 0) status = 'invalid';
+
+    const fineAmount = calculateFine(level);
+
+    const testRecord = new TestRecord({
+      idNumber,
+      gender,
+      identifier,
+      numberPlate,
+      alcoholLevel: level,
+      fineAmount,
+      location,
+      deviceSerial,
+      status,
+      notes,
+      officerId: null,
+      source: 'esp32'
+    });
+
+    const savedRecord = await testRecord.save();
+
+    res.status(201).json({
+      success: true,
+      message: 'ESP32 test record created successfully',
+       savedRecord
+    });
+  } catch (error) {
+    console.error('Create ESP32 test record error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create ESP32 test record',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+// --- END CONTROLLER FUNCTIONS ---
+
+// --- EXPORT ALL FUNCTIONS ---
+module.exports = {
+  createTestRecord,
+  getTestRecords,
+  getAllTestRecords,
+  getTestRecordById,
+  printTestReceipt,
+  syncOfflineRecords,
+  createESP32TestRecord
+};
+// --- END EXPORT ALL FUNCTIONS ---
