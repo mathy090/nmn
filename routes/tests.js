@@ -1,8 +1,6 @@
 // routes/tests.js
-// --- FIX 1: Correct module name to lowercase 'express' ---
-const express = require('express');
-// --- FIX 2: Correct router creation using lowercase 'express' ---
-const router = express.Router();
+const express = require('express'); // <-- FIXED: lowercase 'e'
+const router = express.Router(); // <-- FIXED: lowercase 'e'
 const { protect } = require('../middleware/auth');
 // Import validation if you have specific rules, otherwise remove
 // const { validateTestRecord } = require('../middleware/validation');
@@ -20,7 +18,7 @@ const {
 } = require('../controllers/testController');
 
 // --- APPLY AUTHENTICATION MIDDLEWARE ---
-// All routes defined after this line will require authentication
+// All routes defined AFTER this line will require authentication
 router.use(protect);
 
 // --- DEFINE TEST RECORD ROUTES ---
@@ -54,12 +52,6 @@ router.post('/sync', syncOfflineRecords);
 // One clean way is to define it BEFORE the global `protect` or handle it differently.
 // BEST PRACTICE: Separate routes requiring auth from those that don't.
 // But to keep changes minimal for now, we'll redefine it correctly.
-
-// This route should NOT require officer authentication
-// So we define it BEFORE applying the global `protect` middleware above.
-// However, since we already applied `protect` globally, this route WILL require auth.
-// To fix this, we need to move the ESP32 route definition *before* the global `protect`.
-// But let's assume for now the controller handles the logic correctly or auth is required.
 
 // POST /api/tests/esp32
 // CRITICAL: Ensure createESP32TestRecord is correctly imported and defined
