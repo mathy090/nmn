@@ -1,107 +1,9 @@
-// controllers/authController.js
 const User = require('../models/User');
 const { generateToken } = require('../utils/jwt');
 const bcrypt = require('bcryptjs');
-const crypto = require('crypto'); // For generating reset tokens
+const crypto = require('crypto');
 
-// --- SIGNUP IMPLEMENTATION ---
-/**
- * Signup user
- * 1. Validates required fields
- * 2. Checks if user already exists (by identifier or email)
- * 3. Hashes password
- * 4. Determines role (first user is admin)
- * 5. Creates new user
- * 6. Generates JWT token
- * 7. Responds with success, token, and user info
- */
-const signup = async (req, res) => {
-  try {
-    const { identifier, email, firstName, lastName, password, badgeNumber } = req.body;
-
-    // Basic validation
-    if (!identifier || !password || !firstName || !lastName) {
-      return res.status(400).json({
-        success: false,
-        message: 'Identifier, password, first name, and last name are required'
-      });
-    }
-
-    // Check if user already exists
-    const existingUser = await User.findOne({
-      $or: [{ identifier }, { email }] // Check by identifier or email
-    });
-
-    if (existingUser) {
-      return res.status(400).json({
-        success: false,
-        message: 'User with this identifier or email already exists'
-      });
-    }
-
-    // Hash password before saving
-    const saltRounds = 10; // Adjust rounds as needed for security/performance
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
-
-    // Determine role (e.g., first user is admin, rest are officers)
-    // This is a simple check, you might want a more robust admin assignment method
-    const userCount = await User.countDocuments();
-    const role = userCount === 0 ? 'admin' : 'officer';
-
-    // Create new user
-    const user = new User({
-      identifier,
-      email: email || undefined, // Allow email to be optional or undefined
-      firstName,
-      lastName,
-      password: hashedPassword, // Store the hashed password
-      badgeNumber: badgeNumber || undefined, // Allow badgeNumber to be optional
-      role // Assign role
-    });
-
-    const savedUser = await user.save();
-
-    // Generate JWT token for the new user
-    const token = generateToken(savedUser._id);
-
-    // Respond with success, token, and user info (excluding password)
-    res.status(201).json({
-      success: true,
-      message: 'Account created successfully',
-      token,
-      user: {
-        id: savedUser._id,
-        identifier: savedUser.identifier,
-        email: savedUser.email,
-        firstName: savedUser.firstName,
-        lastName: savedUser.lastName,
-        badgeNumber: savedUser.badgeNumber,
-        role: savedUser.role,
-        createdAt: savedUser.createdAt
-        // Add other non-sensitive user fields if needed
-      }
-    });
-
-  } catch (error) {
-    console.error('Signup error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Signup failed',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-};
-
-// --- LOGIN IMPLEMENTATION ---
-/**
- * Login user
- * 1. Validates identifier and password
- * 2. Finds user by identifier or email
- * 3. Compares password
- * 4. Updates last login timestamp
- * 5. Generates JWT token
- * 6. Responds with success, token, and user info
- */
+// Login User
 const login = async (req, res) => {
   try {
     const { identifier, password } = req.body;
@@ -113,10 +15,9 @@ const login = async (req, res) => {
       });
     }
 
-    // Find user by identifier (could be ID number, badge number, email, etc.)
-    // We'll search by identifier or email
+    // Find user by identifier or email
     const user = await User.findOne({
-      $or: [{ identifier }, { email: identifier }] // Allow login with email as identifier
+      $or: [{ identifier }, { email: identifier }]
     });
 
     if (!user) {
@@ -126,7 +27,7 @@ const login = async (req, res) => {
       });
     }
 
-    // Compare password
+    // Check password
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(401).json({
@@ -135,11 +36,11 @@ const login = async (req, res) => {
       });
     }
 
-    // Update last login timestamp
+    // Update last login
     user.lastLogin = Date.now();
     await user.save();
 
-    // Generate JWT token
+    // Generate token
     const token = generateToken(user._id);
 
     res.status(200).json({
@@ -150,12 +51,9 @@ const login = async (req, res) => {
         id: user._id,
         identifier: user.identifier,
         email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        badgeNumber: user.badgeNumber,
         role: user.role,
-        lastLogin: user.lastLogin
-        // Add other non-sensitive user fields if needed
+        firstName: user.firstName,
+        lastName: user.lastName
       }
     });
   } catch (error) {
@@ -168,47 +66,72 @@ const login = async (req, res) => {
   }
 };
 
-// --- GET PROFILE IMPLEMENTATION ---
-/**
- * Get user profile
- * 1. Uses protect middleware to ensure user is authenticated (req.user is populated)
- * 2. Finds user by ID (excluding password)
- * 3. Responds with user data
- */
-const getProfile = async (req, res) => {
+// Signup User
+const signup = async (req, res) => {
   try {
-    // `req.user` is populated by the `protect` middleware
-    const user = await User.findById(req.user.id).select('-password'); // Exclude password
+    const { identifier, email, firstName, lastName, password, badgeNumber } = req.body;
 
-    if (!user) {
-      return res.status(404).json({
+    if (!identifier || !password || !firstName || !lastName) {
+      return res.status(400).json({
         success: false,
-        message: 'User not found'
+        message: 'Identifier, password, first name, and last name are required'
       });
     }
 
-    res.status(200).json({
+    // Check if user exists
+    const existingUser = await User.findOne({
+      $or: [{ identifier }, { email }]
+    });
+
+    if (existingUser) {
+      return res.status(409).json({
+        success: false,
+        message: 'User with this identifier or email already exists'
+      });
+    }
+
+    // Hash password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    // Create user
+    const user = new User({
+      identifier,
+      email: email || undefined,
+      firstName,
+      lastName,
+      password: hashedPassword,
+      badgeNumber: badgeNumber || undefined,
+      role: identifier === 'admin@example.com' ? 'admin' : 'officer'
+    });
+
+    await user.save();
+
+    // Generate token
+    const token = generateToken(user._id);
+
+    res.status(201).json({
       success: true,
-       user
+      message: 'Account created successfully',
+      token,
+      user: {
+        id: user._id,
+        identifier: user.identifier,
+        email: user.email,
+        role: user.role
+      }
     });
   } catch (error) {
-    console.error('Get profile error:', error);
+    console.error('Signup error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to retrieve profile',
+      message: 'Signup failed',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
 
-// --- FORGOT PASSWORD IMPLEMENTATION ---
-/**
- * Forgot Password
- * 1. Finds user by email
- * 2. Generates reset token
- * 3. Hashes token and saves to DB with expiry
- * 4. Logs token to console (for now, later send email)
- */
+// Forgot Password
 const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
@@ -220,65 +143,46 @@ const forgotPassword = async (req, res) => {
       });
     }
 
-    // 1. Find user by email
     const user = await User.findOne({ email });
+
     if (!user) {
-        // For security, don't reveal if email exists
-        console.log(`Forgot password requested for non-existent email: ${email}`);
-        // Still send a success response to avoid enumeration
-        return res.status(200).json({
-            success: true,
-            message: 'If your email is registered, you will receive a password reset link shortly.'
-        });
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
     }
 
-    // 2. Generate reset token
-    const resetToken = crypto.randomBytes(32).toString('hex');
-
-    // 3. Hash token and set expiry (e.g., 1 hour)
+    // Generate reset token
+    const resetToken = crypto.randomBytes(20).toString('hex');
     const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
-    const resetTokenExpiry = Date.now() + 60 * 60 * 1000; // 1 hour from now
 
-    // 4. Save hashed token and expiry to user document
+    // Set token and expiry (1 hour)
     user.passwordResetToken = hashedToken;
-    user.passwordResetExpires = resetTokenExpiry;
-    await user.save({ validateBeforeSave: false }); // Skip validation to avoid issues with other fields
+    user.passwordResetExpires = Date.now() + 3600000; // 1 hour from now
+    await user.save();
 
-    // 5. Log the token (DO NOT DO THIS IN PRODUCTION!)
-    // In production, you would send an email with a link like:
-    // `https://your-frontend-domain.com/reset-password/${resetToken}`
-    console.log(`*** PASSWORD RESET TOKEN FOR ${user.email}: ${resetToken} ***`);
-    console.log(`(Hashed token in DB: ${hashedToken})`);
-    console.log(`Expiry: ${new Date(resetTokenExpiry).toISOString()}`);
+    // TODO: Send email with resetToken
+    console.log(`Password reset token: ${resetToken}`);
 
     res.status(200).json({
       success: true,
-      message: 'If your email is registered, you will receive a password reset link shortly.'
+      message: 'Password reset token generated',
+      resetToken: process.env.NODE_ENV === 'development' ? resetToken : undefined
     });
-
   } catch (error) {
     console.error('Forgot password error:', error);
     res.status(500).json({
       success: false,
-      message: 'Password reset request failed',
+      message: 'Password reset failed',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
 
-// --- RESET PASSWORD IMPLEMENTATION ---
-/**
- * Reset Password
- * 1. Finds user by hashed token and checks expiry
- * 2. Validates new password
- * 3. Hashes new password and saves
- * 4. Clears reset token fields
- * 5. Logs user in (optional: generate new token)
- */
+// Reset Password
 const resetPassword = async (req, res) => {
   try {
-    const { token } = req.params; // Get token from URL params
-    const { newPassword } = req.body; // Get new password from request body
+    const { token, newPassword } = req.body;
 
     if (!token || !newPassword) {
       return res.status(400).json({
@@ -288,19 +192,10 @@ const resetPassword = async (req, res) => {
     }
 
     if (newPassword.length < 8) {
-         return res.status(400).json({
-             success: false,
-             message: 'Password must be at least 8 characters long.'
-         });
-     }
-
-    // Basic password strength check (you can expand this)
-    const strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/;
-    if (!strongPasswordRegex.test(newPassword)) {
-        return res.status(400).json({
-            success: false,
-            message: 'Password must contain uppercase, lowercase, number, and special character.'
-        });
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 8 characters long.'
+      });
     }
 
     // 1. Hash the token from the URL to compare with DB
@@ -320,28 +215,19 @@ const resetPassword = async (req, res) => {
     }
 
     // 3. Hash new password
-    const saltRounds = 10;
-    const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
 
     // 4. Update user's password and clear reset token fields
     user.password = hashedPassword;
     user.passwordResetToken = undefined;
     user.passwordResetExpires = undefined;
-    // Optional: Update last password change timestamp
-    user.lastPasswordChange = Date.now();
     await user.save();
 
-    // 5. (Optional) Log the user in automatically by generating a new token
-    const newToken = generateToken(user._id);
-
-    // 6. Send success response (optionally with new token)
     res.status(200).json({
       success: true,
-      message: 'Password reset successfully',
-       newToken // Include new token if auto-login desired
-      // user: { ... } // Optionally include user info
+      message: 'Password reset successful'
     });
-
   } catch (error) {
     console.error('Reset password error:', error);
     res.status(500).json({
@@ -352,11 +238,36 @@ const resetPassword = async (req, res) => {
   }
 };
 
-// --- EXPORT ALL FUNCTIONS ---
+// Get User Profile
+const getProfile = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select('-password');
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      user
+    });
+  } catch (error) {
+    console.error('Get profile error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get profile',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 module.exports = {
-  signup,          // Existing function
-  login,           // Existing function
-  getProfile,      // Existing function
-  forgotPassword,  // New function
-  resetPassword    // New function
+  login,
+  signup,
+  getProfile,
+  forgotPassword,
+  resetPassword
 };
