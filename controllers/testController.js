@@ -1,7 +1,7 @@
 // controllers/testController.js
 const TestRecord = require('../models/TestRecord');
 const User = require('../models/User');
-const { printReceipt } = require('../utils/printer');
+// const { printReceipt } = require('../utils/printer'); // Placeholder for printer integration
 
 // --- HELPER FUNCTIONS ---
 // Calculate fine based on alcohol level
@@ -30,6 +30,16 @@ const getFineDescription = (alcoholLevel) => {
   } else {
     return 'Very High Alcohol Level (>0.30 mg/L)';
   }
+};
+
+// Placeholder for printer integration
+const printReceipt = async (receiptData, copies) => {
+  console.log(`*** PRINTING RECEIPT (SIMULATED) ***`);
+  console.log(`Data:`, receiptData);
+  console.log(`Copies: ${copies}`);
+  // In a real app, this would connect to the printer and send the data
+  // For now, we'll just simulate success
+  return { success: true, message: 'Receipt printed successfully (simulated)' };
 };
 // --- END HELPER FUNCTIONS ---
 
@@ -340,8 +350,9 @@ const syncOfflineRecords = async (req, res) => {
         }
 
         // Validate alcohol level
-        const level = parseFloat(record.alcoholLevel);
-        if (isNaN(level) || level < 0 || level > 1.0) {
+        // --- FIX: RENAME 'level' to 'alcoholLevelFloat' to avoid conflict ---
+        const alcoholLevelFloat = parseFloat(record.alcoholLevel);
+        if (isNaN(alcoholLevelFloat) || alcoholLevelFloat < 0 || alcoholLevelFloat > 1.0) {
           console.warn(`Skipping record due to invalid alcohol level:`, record);
           errors.push({
             recordId: record.id || record.timestamp || 'unknown',
@@ -349,6 +360,7 @@ const syncOfflineRecords = async (req, res) => {
           });
           continue; // Skip this record
         }
+        // --- END FIX ---
         // --- END VALIDATE RECORD ---
 
         // --- SMART SYNC LOGIC ---
@@ -373,17 +385,16 @@ const syncOfflineRecords = async (req, res) => {
         // --- END SMART SYNC LOGIC ---
 
         // --- PROCESS AND SAVE NEW RECORD ---
-        // Determine status based on alcohol level
+        // Determine status based on alcohol level (use renamed variable)
         let status = 'normal';
-        const level = parseFloat(record.alcoholLevel);
-        if (level > 0.08) {
+        if (alcoholLevelFloat > 0.08) { // Use renamed variable
           status = 'exceeded';
-        } else if (level < 0) {
+        } else if (alcoholLevelFloat < 0) { // Use renamed variable
           status = 'invalid';
         }
 
-        // Calculate fine amount (use your existing logic or send from frontend)
-        const fineAmount = record.fineAmount !== undefined ? parseFloat(record.fineAmount) : calculateFine(level);
+        // Calculate fine amount (use renamed variable)
+        const fineAmount = calculateFine(alcoholLevelFloat); // Use renamed variable
 
         // Create new test record
         const testRecord = new TestRecord({
@@ -391,7 +402,7 @@ const syncOfflineRecords = async (req, res) => {
           gender: record.gender,
           identifier: record.identifier, // Name/ID of the person tested
           numberPlate: record.numberPlate,
-          alcoholLevel: level,
+          alcoholLevel: alcoholLevelFloat, // Use renamed variable
           fineAmount,
           location: record.location,
           deviceSerial: record.deviceSerial,
@@ -466,24 +477,26 @@ const createESP32TestRecord = async (req, res) => {
     }
     
     // Validate alcohol level
-    const level = parseFloat(alcoholLevel);
-    if (isNaN(level) || level < 0 || level > 1.0) {
+    // --- FIX: RENAME 'level' to 'alcoholLevelFloat' to avoid conflict ---
+    const alcoholLevelFloat = parseFloat(alcoholLevel);
+    if (isNaN(alcoholLevelFloat) || alcoholLevelFloat < 0 || alcoholLevelFloat > 1.0) {
       return res.status(400).json({
         success: false,
         message: 'Invalid alcohol level. Must be between 0 and 1.0 mg/L'
       });
     }
+    // --- END FIX ---
     
-    // Determine status based on alcohol level
+    // Determine status based on alcohol level (use renamed variable)
     let status = 'normal';
-    if (level > 0.08) {
+    if (alcoholLevelFloat > 0.08) { // Use renamed variable
       status = 'exceeded';
-    } else if (level < 0) {
+    } else if (alcoholLevelFloat < 0) { // Use renamed variable
       status = 'invalid';
     }
     
-    // Calculate fine amount
-    const fineAmount = calculateFine(level);
+    // Calculate fine amount (use renamed variable)
+    const fineAmount = calculateFine(alcoholLevelFloat); // Use renamed variable
     
     // Create new test record (no officerId initially, marked as ESP32 source)
     const testRecord = new TestRecord({
@@ -491,7 +504,7 @@ const createESP32TestRecord = async (req, res) => {
       gender,
       identifier, // Name/ID of the person tested
       numberPlate,
-      alcoholLevel: level,
+      alcoholLevel: alcoholLevelFloat, // Use renamed variable
       fineAmount,
       location,
       deviceSerial,
