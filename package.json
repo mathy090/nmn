@@ -22,7 +22,7 @@
     "jsonwebtoken": "^9.0.1",
     "mongoose": "^7.3.1",
     "morgan": "^1.10.0",
-    "node-cron": "^3.0.3",  // <-- THIS LINE MUST BE CORRECT
+    "node-cron": "^3.0.3",
     "nodemailer": "^6.9.13",
     "uuid": "^9.0.0",
     "winston": "^3.10.0"
