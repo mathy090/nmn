@@ -1,6 +1,6 @@
 // routes/auth.js
-const express = require('express');
-const router = express.Router();
+const express = require('express'); // <-- FIXED: lowercase 'e'
+const router = express.Router(); // <-- FIXED: lowercase 'e'
 const { protect } = require('../middleware/auth');
 // Import validation if you have specific rules, otherwise remove
 // const { validateLogin, validateSignup } = require('../middleware/validation');
