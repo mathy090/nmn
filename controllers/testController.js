@@ -1,7 +1,7 @@
 // controllers/testController.js
 const TestRecord = require('../models/TestRecord');
 const User = require('../models/User');
-// const { printReceipt } = require('../utils/printer'); // Placeholder for printer integration
+const { printReceipt } = require('../utils/printer'); // Import the printer utility
 
 // --- HELPER FUNCTIONS ---
 // Calculate fine based on alcohol level
@@ -30,16 +30,6 @@ const getFineDescription = (alcoholLevel) => {
   } else {
     return 'Very High Alcohol Level (>0.30 mg/L)';
   }
-};
-
-// Placeholder for printer integration
-const printReceipt = async (receiptData, copies) => {
-  console.log(`*** PRINTING RECEIPT (SIMULATED) ***`);
-  console.log(`Data:`, receiptData);
-  console.log(`Copies: ${copies}`);
-  // In a real app, this would connect to the printer and send the data
-  // For now, we'll just simulate success
-  return { success: true, message: 'Receipt printed successfully (simulated)' };
 };
 // --- END HELPER FUNCTIONS ---
 
@@ -166,10 +156,18 @@ const getTestRecords = async (req, res) => {
   }
 };
 
-// Get ALL test records (admin only)
+// --- GET ALL TEST RECORDS (ADMIN ONLY) ---
+/**
+ * Get ALL test records (admin only)
+ * 1. Checks if user is admin
+ * 2. Builds query with optional filters
+ * 3. Executes query with pagination
+ * 4. Populates officer info
+ * 5. Responds with records and pagination info
+ */
 const getAllTestRecords = async (req, res) => {
   try {
-    // Check if user is admin (this check should ideally be in middleware)
+    // 1. Check if user is admin (this check should ideally be in middleware)
     const user = await User.findById(req.user.id);
     if (user.role !== 'admin') {
       return res.status(403).json({
@@ -178,30 +176,41 @@ const getAllTestRecords = async (req, res) => {
       });
     }
     
-    const { page = 1, limit = 20, synced } = req.query;
+    // 2. Get query parameters for filtering and pagination
+    const { page = 1, limit = 20, synced, startDate, endDate } = req.query;
     
-    // Build query
+    // 3. Build query
     const query = {};
     if (synced !== undefined) {
       query.synced = synced === 'true';
     }
+    // Optional date range filtering
+    if (startDate || endDate) {
+        query.timestamp = {};
+        if (startDate) {
+            query.timestamp.$gte = new Date(startDate);
+        }
+        if (endDate) {
+            query.timestamp.$lte = new Date(endDate);
+        }
+    }
     
-    // Execute query with pagination and populate officer info
+    // 4. Execute query with pagination and populate officer info
     const records = await TestRecord.find(query)
       .populate('officerId', 'identifier firstName lastName badgeNumber')
-      .sort({ timestamp: -1 })
+      .sort({ timestamp: -1 }) // Sort by most recent first
       .limit(limit * 1)
       .skip((page - 1) * limit)
       .exec();
     
-    // Get total count
+    // 5. Get total count
     const count = await TestRecord.countDocuments(query);
     
     res.status(200).json({
       success: true,
       count: records.length,
       totalPages: Math.ceil(count / limit),
-      currentPage: page,
+      currentPage: parseInt(page),
        records
     });
   } catch (error) {
@@ -213,6 +222,7 @@ const getAllTestRecords = async (req, res) => {
     });
   }
 };
+// --- END GET ALL TEST RECORDS (ADMIN ONLY) ---
 
 // Get single test record by ID
 const getTestRecordById = async (req, res) => {
@@ -272,11 +282,15 @@ const printTestReceipt = async (req, res) => {
       });
     }
     
-    // Generate and print receipt
+    // --- GENERATE AND PRINT RECEIPT WITH DATE ---
+    // Generate receipt data including formatted date/time
     const receiptData = {
       ...record.toObject(),
       officerName: `${user.firstName} ${user.lastName}`,
-      badgeNumber: user.badgeNumber
+      badgeNumber: user.badgeNumber,
+      // Automatically fetch and format the current date/time for the receipt
+      printDate: new Date().toLocaleDateString(),
+      printTime: new Date().toLocaleTimeString()
     };
     
     const printResult = await printReceipt(receiptData, 2); // Print 2 copies
@@ -284,6 +298,7 @@ const printTestReceipt = async (req, res) => {
     // Update record
     record.receiptPrinted = true;
     await record.save();
+    // --- END GENERATE AND PRINT RECEIPT WITH DATE ---
     
     res.status(200).json({
       success: true,
@@ -350,9 +365,8 @@ const syncOfflineRecords = async (req, res) => {
         }
 
         // Validate alcohol level
-        // --- FIX: RENAME 'level' to 'alcoholLevelFloat' to avoid conflict ---
-        const alcoholLevelFloat = parseFloat(record.alcoholLevel);
-        if (isNaN(alcoholLevelFloat) || alcoholLevelFloat < 0 || alcoholLevelFloat > 1.0) {
+        const level = parseFloat(record.alcoholLevel);
+        if (isNaN(level) || level < 0 || level > 1.0) {
           console.warn(`Skipping record due to invalid alcohol level:`, record);
           errors.push({
             recordId: record.id || record.timestamp || 'unknown',
@@ -360,7 +374,6 @@ const syncOfflineRecords = async (req, res) => {
           });
           continue; // Skip this record
         }
-        // --- END FIX ---
         // --- END VALIDATE RECORD ---
 
         // --- SMART SYNC LOGIC ---
@@ -385,16 +398,16 @@ const syncOfflineRecords = async (req, res) => {
         // --- END SMART SYNC LOGIC ---
 
         // --- PROCESS AND SAVE NEW RECORD ---
-        // Determine status based on alcohol level (use renamed variable)
+        // Determine status based on alcohol level
         let status = 'normal';
-        if (alcoholLevelFloat > 0.08) { // Use renamed variable
+        if (level > 0.08) {
           status = 'exceeded';
-        } else if (alcoholLevelFloat < 0) { // Use renamed variable
+        } else if (level < 0) {
           status = 'invalid';
         }
 
-        // Calculate fine amount (use renamed variable)
-        const fineAmount = calculateFine(alcoholLevelFloat); // Use renamed variable
+        // Calculate fine amount (use your existing logic or send from frontend)
+        const fineAmount = calculateFine(level);
 
         // Create new test record
         const testRecord = new TestRecord({
@@ -402,7 +415,7 @@ const syncOfflineRecords = async (req, res) => {
           gender: record.gender,
           identifier: record.identifier, // Name/ID of the person tested
           numberPlate: record.numberPlate,
-          alcoholLevel: alcoholLevelFloat, // Use renamed variable
+          alcoholLevel: level,
           fineAmount,
           location: record.location,
           deviceSerial: record.deviceSerial,
@@ -477,26 +490,24 @@ const createESP32TestRecord = async (req, res) => {
     }
     
     // Validate alcohol level
-    // --- FIX: RENAME 'level' to 'alcoholLevelFloat' to avoid conflict ---
-    const alcoholLevelFloat = parseFloat(alcoholLevel);
-    if (isNaN(alcoholLevelFloat) || alcoholLevelFloat < 0 || alcoholLevelFloat > 1.0) {
+    const level = parseFloat(alcoholLevel);
+    if (isNaN(level) || level < 0 || level > 1.0) {
       return res.status(400).json({
         success: false,
         message: 'Invalid alcohol level. Must be between 0 and 1.0 mg/L'
       });
     }
-    // --- END FIX ---
     
-    // Determine status based on alcohol level (use renamed variable)
+    // Determine status based on alcohol level
     let status = 'normal';
-    if (alcoholLevelFloat > 0.08) { // Use renamed variable
+    if (level > 0.08) {
       status = 'exceeded';
-    } else if (alcoholLevelFloat < 0) { // Use renamed variable
+    } else if (level < 0) {
       status = 'invalid';
     }
     
-    // Calculate fine amount (use renamed variable)
-    const fineAmount = calculateFine(alcoholLevelFloat); // Use renamed variable
+    // Calculate fine amount
+    const fineAmount = calculateFine(level);
     
     // Create new test record (no officerId initially, marked as ESP32 source)
     const testRecord = new TestRecord({
@@ -504,7 +515,7 @@ const createESP32TestRecord = async (req, res) => {
       gender,
       identifier, // Name/ID of the person tested
       numberPlate,
-      alcoholLevel: alcoholLevelFloat, // Use renamed variable
+      alcoholLevel: level,
       fineAmount,
       location,
       deviceSerial,
@@ -536,9 +547,9 @@ const createESP32TestRecord = async (req, res) => {
 module.exports = {
   createTestRecord,        // For officer mobile app
   getTestRecords,         // Get officer's records
-  getAllTestRecords,      // Get all records (admin)
+  getAllTestRecords,      // Get all records (admin) - NEW/UPDATED
   getTestRecordById,      // Get a specific record
-  printTestReceipt,       // Print receipt
+  printTestReceipt,       // Print receipt - UPDATED to include date
   syncOfflineRecords,     // Smart sync for mobile app
   createESP32TestRecord   // For ESP32 data
 };
