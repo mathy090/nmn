@@ -4,13 +4,10 @@ const router = express.Router(); // <-- FIXED: lowercase 'e'
 const { protect } = require('../middleware/auth');
 // Import validation if you have specific rules, otherwise remove
 // const { validateTestRecord } = require('../middleware/validation');
-
-// --- CRUCIAL: IMPORT ALL CONTROLLER FUNCTIONS CORRECTLY ---
-// Make sure these function names EXACTLY match what's exported in ../controllers/testController.js
 const {
   createTestRecord,        // For officer mobile app
   getTestRecords,         // Get officer's records
-  getAllTestRecords,      // Get all records (admin)
+  getAllTestRecords,      // Get all records (admin) - NEW/IMPORTED
   getTestRecordById,      // Get a specific record
   printTestReceipt,       // Print receipt
   syncOfflineRecords,     // Smart sync for mobile app
@@ -18,7 +15,7 @@ const {
 } = require('../controllers/testController');
 
 // --- APPLY AUTHENTICATION MIDDLEWARE ---
-// All routes defined AFTER this line will require authentication
+// All routes defined after this line will require authentication
 router.use(protect);
 
 // --- DEFINE TEST RECORD ROUTES ---
@@ -30,9 +27,10 @@ router.post('/', createTestRecord);
 // GET /api/tests?page=1&limit=20&synced=true/false
 router.get('/', getTestRecords);
 
-// Get ALL test records (admin only)
-// GET /api/tests/all?page=1&limit=20&synced=true/false
-router.get('/all', getAllTestRecords);
+// --- GET ALL TEST RECORDS (ADMIN ONLY) ---
+// GET /api/tests/all?page=1&limit=20&synced=true/false&startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
+router.get('/all', getAllTestRecords); // <-- NEW ROUTE DEFINITION
+// --- END GET ALL TEST RECORDS (ADMIN ONLY) ---
 
 // Get a specific test record by ID (must belong to officer or be admin)
 // GET /api/tests/:id
