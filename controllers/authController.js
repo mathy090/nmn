@@ -360,3 +360,4 @@ module.exports = {
   forgotPassword,  // New function
   resetPassword    // New function
 };
+// --- END EXPORT ALL FUNCTIONS ---
