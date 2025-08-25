@@ -2,7 +2,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-const helmet = require('helm');
+const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 require('dotenv').config();
@@ -144,3 +144,4 @@ app.listen(PORT, () => {
   console.log(`Breathalyzer backend running on port ${PORT} in ${process.env.NODE_ENV} mode`);
   console.log('Special admin account: tafadzwarunowanda@gmail.com / Mathews##$090');
 });
+
