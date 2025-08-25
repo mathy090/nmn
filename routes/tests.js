@@ -1,7 +1,6 @@
-// routes/test.js
 const express = require('express');
 const router = express.Router();
-const { protect, admin } = require('../middleware/auth');
+const { protect } = require('../middleware/auth');
 const TestRecord = require('../models/TestRecord');
 
 // @route   GET /api/tests
@@ -9,21 +8,9 @@ const TestRecord = require('../models/TestRecord');
 // @access  Private
 router.get('/', protect, async (req, res) => {
   try {
-    const records = await TestRecord.find({ identifier: req.user.identifier })
+    const records = await TestRecord.find({ identifier: req.user.id })
       .sort({ timestamp: -1 })
       .limit(5);
-    res.json(records);
-  } catch (err) {
-    res.status(500).send('Server error');
-  }
-});
-
-// @route   GET /api/tests/all
-// @desc    Get ALL test records (admin only)
-// @access  Private/Admin
-router.get('/all', protect, admin, async (req, res) => {
-  try {
-    const records = await TestRecord.find().sort({ timestamp: -1 });
     res.json(records);
   } catch (err) {
     res.status(500).send('Server error');
@@ -34,8 +21,26 @@ router.get('/all', protect, admin, async (req, res) => {
 // @desc    Create a new test record
 // @access  Private
 router.post('/', protect, async (req, res) => {
-  // Validation and creation logic remains the same
-  // ...
+  const { idNumber, gender, numberPlate, alcoholLevel, location, deviceSerial, notes } = req.body;
+  
+  try {
+    // Create new test record
+    const testRecord = new TestRecord({
+      idNumber,
+      gender,
+      identifier: req.user.id,
+      numberPlate,
+      alcoholLevel,
+      location,
+      deviceSerial,
+      notes
+    });
+    
+    await testRecord.save();
+    res.json(testRecord);
+  } catch (err) {
+    res.status(500).send('Server error');
+  }
 });
 
 module.exports = router;
