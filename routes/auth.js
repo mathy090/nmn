@@ -1,4 +1,3 @@
-// routes/auth.js
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
@@ -6,11 +5,9 @@ const jwt = require('jsonwebtoken');
 const { check, validationResult } = require('express-validator');
 const User = require('../models/User');
 
-/**
- * @route   POST /api/auth/login
- * @desc    Authenticate user & get token
- * @access  Public
- */
+// @route   POST /api/auth/login
+// @desc    Authenticate user & get token
+// @access  Public
 router.post('/login', async (req, res) => {
   const { identifier, password } = req.body;
   
@@ -99,11 +96,9 @@ router.post('/login', async (req, res) => {
   }
 });
 
-/**
- * @route   POST /api/auth/signup
- * @desc    Register a new user
- * @access  Public
- */
+// @route   POST /api/auth/signup
+// @desc    Register a new user
+// @access  Public
 router.post('/signup', async (req, res) => {
   const { identifier, email, password, firstName, lastName, role, badgeNumber, department } = req.body;
 
@@ -124,7 +119,7 @@ router.post('/signup', async (req, res) => {
       password,
       firstName,
       lastName,
-      role: role || 'officer', // Default to officer role
+      role: role || 'officer',
       badgeNumber,
       department
     });
@@ -148,43 +143,6 @@ router.post('/signup', async (req, res) => {
     };
 
     res.json({ success: true, user: userData });
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Server error' 
-    });
-  }
-});
-
-/**
- * @route   GET /api/auth/profile
- * @desc    Get user profile
- * @access  Private
- */
-router.get('/profile', async (req, res) => {
-  try {
-    // In a real implementation, you'd verify the token first
-    // For now, we'll assume the user is authenticated
-    const user = await User.findById(req.user.id).select('-password');
-    if (!user) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'User not found' 
-      });
-    }
-    res.json({ 
-      success: true, 
-      user: {
-        identifier: user.identifier,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        role: user.role,
-        badgeNumber: user.badgeNumber,
-        department: user.department
-      }
-    });
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ 
