@@ -2,15 +2,15 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-const helmet = require('helmet');
+const helmet = require('helm');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
-const cron = require('node-cron'); // <-- Import cron
 require('dotenv').config();
 
 const connectDB = require('./config/db');
 const authRoutes = require('./routes/auth');
 const testRoutes = require('./routes/tests');
+const adminRoutes = require('./routes/admin'); // Import admin routes
 
 // Initialize app
 const app = express();
@@ -43,6 +43,7 @@ if (process.env.NODE_ENV === 'development') {
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/tests', testRoutes);
+app.use('/api/admin', adminRoutes); // Register admin routes
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -53,28 +54,71 @@ app.get('/health', (req, res) => {
   });
 });
 
-// --- AUTO-CLEAR SYNCED RECORDS EVERY 24 HOURS ---
-// Schedule a task to run daily at midnight (0 0 * * *)
-cron.schedule('0 0 * * *', async () => {
+// --- INITIALIZE SPECIAL ADMIN ACCOUNT ON STARTUP ---
+(async () => {
   try {
-    console.log('Scheduled task: Clearing synced records older than 24 hours...');
-    const TestRecord = require('./models/TestRecord'); // Import model inside the task
-    
-    // Calculate the cutoff date (24 hours ago)
-    const cutoffDate = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    
-    // Delete synced records older than the cutoff date
-    const result = await TestRecord.deleteMany({
-      synced: true,
-      timestamp: { $lt: cutoffDate }
+    // Wait for database connection to be established
+    await new Promise((resolve, reject) => {
+      const state = mongoose.connection.readyState;
+      if (state === 1) { // 1 = connected
+        resolve();
+      } else {
+        mongoose.connection.once('open', resolve);
+        mongoose.connection.once('error', reject);
+      }
     });
     
-    console.log(`Auto-clear task completed. Deleted ${result.deletedCount} synced records.`);
+    console.log('Database connected, initializing special admin account...');
+    
+    const User = require('./models/User');
+    const bcrypt = require('bcryptjs');
+    
+    // Check if special admin already exists
+    let specialAdmin = await User.findOne({ email: 'tafadzwarunowanda@gmail.com' });
+    
+    if (specialAdmin) {
+      // Update if exists but role is not admin
+      if (specialAdmin.role !== 'admin') {
+        specialAdmin.role = 'admin';
+        specialAdmin.firstName = specialAdmin.firstName || 'Admin';
+        specialAdmin.lastName = specialAdmin.lastName || 'User';
+        specialAdmin.badgeNumber = specialAdmin.badgeNumber || 'ADMIN-001';
+        specialAdmin.department = specialAdmin.department || 'Administration';
+        await specialAdmin.save();
+      }
+      console.log('Special admin account already exists:', {
+        identifier: specialAdmin.identifier,
+        email: specialAdmin.email,
+        role: specialAdmin.role
+      });
+    } else {
+      // Create special admin
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash('Mathews##$090', salt);
+      
+      specialAdmin = new User({
+        identifier: 'tafadzwarunowanda@gmail.com',
+        email: 'tafadzwarunowanda@gmail.com',
+        firstName: 'Admin',
+        lastName: 'User',
+        password: hashedPassword,
+        role: 'admin',
+        badgeNumber: 'ADMIN-001',
+        department: 'Administration'
+      });
+      
+      await specialAdmin.save();
+      console.log('Special admin account created successfully:', {
+        identifier: specialAdmin.identifier,
+        email: specialAdmin.email,
+        role: specialAdmin.role
+      });
+    }
   } catch (error) {
-    console.error('Scheduled auto-clear task error:', error);
+    console.error('Error initializing special admin account:', error);
   }
-});
-// --- END AUTO-CLEAR SYNCED RECORDS ---
+})();
+// --- END INITIALIZE SPECIAL ADMIN ACCOUNT ---
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -98,6 +142,5 @@ const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
   console.log(`Breathalyzer backend running on port ${PORT} in ${process.env.NODE_ENV} mode`);
-  // Log that the auto-clear task is scheduled
-  console.log('Scheduled task: Auto-clear synced records every 24 hours at midnight.');
+  console.log('Special admin account: tafadzwarunowanda@gmail.com / Mathews##$090');
 });
