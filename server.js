@@ -1,16 +1,16 @@
-// server.js
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
+const cron = require('node-cron');
 require('dotenv').config();
 
 const connectDB = require('./config/db');
 const authRoutes = require('./routes/auth');
 const testRoutes = require('./routes/tests');
-const adminRoutes = require('./routes/admin'); // Import admin routes
+const adminRoutes = require('./routes/admin');
 
 // Initialize app
 const app = express();
@@ -43,7 +43,7 @@ if (process.env.NODE_ENV === 'development') {
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/tests', testRoutes);
-app.use('/api/admin', adminRoutes); // Register admin routes
+app.use('/api/admin', adminRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -144,4 +144,3 @@ app.listen(PORT, () => {
   console.log(`Breathalyzer backend running on port ${PORT} in ${process.env.NODE_ENV} mode`);
   console.log('Special admin account: tafadzwarunowanda@gmail.com / Mathews##$090');
 });
-
