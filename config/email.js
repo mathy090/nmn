@@ -2,21 +2,22 @@
 const nodemailer = require('nodemailer');
 require('dotenv').config();
 
-// Create transporter
-const transporter = nodemailer.createTransporter({
-  host: process.env.EMAIL_HOST,
-  port: parseInt(process.env.EMAIL_PORT),
-  secure: process.env.EMAIL_SECURE === 'true', // true for 465, false for other ports
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
-  }
+const host = process.env.EMAIL_HOST || 'smtp.example.com';
+const port = parseInt(process.env.EMAIL_PORT || '587', 10);
+const secure = (process.env.EMAIL_SECURE || 'false') === 'true';
+const user = process.env.EMAIL_USER || '';
+const pass = process.env.EMAIL_PASS || '';
+
+const transporter = nodemailer.createTransport({
+  host,
+  port,
+  secure,
+  auth: user && pass ? { user, pass } : undefined,
 });
 
-// Verify transporter configuration
-transporter.verify((error, success) => {
+transporter.verify((error) => {
   if (error) {
-    console.error('Email configuration error:', error);
+    console.error('Email configuration error:', error.message);
   } else {
     console.log('Email server is ready to send messages');
   }
