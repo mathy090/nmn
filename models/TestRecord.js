@@ -1,3 +1,4 @@
+// models/TestRecord.js
 const mongoose = require('mongoose');
 
 const testRecordSchema = new mongoose.Schema({
@@ -83,7 +84,7 @@ testRecordSchema.pre('save', function(next) {
   
   // Set fine amount based on status
   if (this.status === 'exceeded') {
-    // Calculate fine based on alcohol level (example: $100 per 0.01 over limit)
+    // Example: $100 per 0.01 over limit
     this.fineAmount = Math.max(100, Math.floor((this.alcoholLevel - 0.05) * 10000));
   } else {
     this.fineAmount = 0;
@@ -98,3 +99,4 @@ testRecordSchema.index({ synced: 1 });
 testRecordSchema.index({ timestamp: -1 });
 
 module.exports = mongoose.model('TestRecord', testRecordSchema);
+
