@@ -1,99 +1,91 @@
-// controllers/syncController.js
 const TestRecord = require('../models/TestRecord');
 
-// Sync records from mobile app
-const syncRecords = async (req, res) => {
+const syncOfflineRecords = async (req, res) => {
   try {
     const records = req.body.records;
-    
-    // Validate records
     if (!Array.isArray(records)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid data format. Expected array of records.'
-      });
+      return res.status(400).json({ success: false, message: 'Invalid data format. Expected array of records.' });
     }
-    
-    // Process each record
-    const processedRecords = [];
+    if (records.length === 0) {
+      return res.status(200).json({ success: true, message: 'No records provided for sync.', synced: 0, errors: [] });
+    }
+
+    let syncedCount = 0;
     const errors = [];
-    
+
     for (const record of records) {
       try {
-        // Check if record already exists
-        const existingRecord = await TestRecord.findOne({
-          _id: record._id,
-          officerId: req.user.id
-        });
-        
-        if (existingRecord) {
-          // Update existing record
-          Object.assign(existingRecord, record);
-          existingRecord.synced = true;
-          await existingRecord.save();
-          processedRecords.push(existingRecord);
-        } else {
-          // Create new record
-          const newRecord = new TestRecord({
-            ...record,
-            officerId: req.user.id,
-            synced: true
-          });
-          const savedRecord = await newRecord.save();
-          processedRecords.push(savedRecord);
+        const required = ['idNumber','gender','identifier','numberPlate','alcoholLevel','location','deviceSerial'];
+        const missing = required.filter(k => record[k] === undefined || record[k] === null || record[k] === '');
+        if (missing.length) {
+          errors.push({ recordId: record.id || record.timestamp || 'unknown', error: `Missing fields: ${missing.join(', ')}` });
+          continue;
         }
-      } catch (recordError) {
-        errors.push({
-          recordId: record._id,
-          error: recordError.message
+
+        const level = parseFloat(record.alcoholLevel);
+        if (isNaN(level) || level < 0 || level > 1.0) {
+          errors.push({ recordId: record.id || record.timestamp || 'unknown', error: 'Invalid alcohol level' });
+          continue;
+        }
+
+        // dedupe by timestamp+officer
+        let existing = null;
+        if (record.timestamp) {
+          existing = await TestRecord.findOne({ timestamp: new Date(record.timestamp), officerId: req.user.id });
+        }
+
+        if (existing) {
+          syncedCount++;
+          continue;
+        }
+
+        const status = level > 0.08 ? 'exceeded' : 'normal';
+        const newRecord = new TestRecord({
+          idNumber: record.idNumber,
+          gender: record.gender,
+          identifier: record.identifier,
+          numberPlate: record.numberPlate,
+          alcoholLevel: level,
+          location: record.location,
+          deviceSerial: record.deviceSerial,
+          notes: record.notes,
+          photo: record.photo,
+          status,
+          officerId: req.user.id,
+          timestamp: record.timestamp ? new Date(record.timestamp) : new Date(),
+          source: record.source || 'mobile_app_offline_sync',
+          synced: true,
         });
+
+        await newRecord.save();
+        syncedCount++;
+      } catch (e) {
+        errors.push({ recordId: record.id || record.timestamp || 'unknown', error: e.message || 'Unknown error' });
       }
     }
-    
+
     res.status(200).json({
       success: true,
-      message: `Synced ${processedRecords.length} records successfully`,
-      processed: processedRecords.length,
-      errors: errors.length,
-      data: {
-        processedRecords,
-        errors
-      }
+      message: `Sync completed`,
+      synced: syncedCount,
+      totalProcessed: records.length,
+      errors,
     });
   } catch (error) {
     console.error('Sync records error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to sync records',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
+    res.status(500).json({ success: false, message: 'Failed to sync records' });
   }
 };
 
-// Get unsynced records
 const getUnsyncedRecords = async (req, res) => {
   try {
-    const records = await TestRecord.find({
-      officerId: req.user.id,
-      synced: false
-    }).sort({ timestamp: -1 });
-    
-    res.status(200).json({
-      success: true,
-      count: records.length,
-      data: records
-    });
+    const records = await TestRecord.find({ officerId: req.user.id, synced: false })
+      .sort({ timestamp: -1 });
+    res.status(200).json({ success: true, count: records.length, data: records });
   } catch (error) {
     console.error('Get unsynced records error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to retrieve unsynced records',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
+    res.status(500).json({ success: false, message: 'Failed to retrieve unsynced records' });
   }
 };
 
-module.exports = {
-  syncRecords,
-  getUnsyncedRecords
-};
+module.exports = { syncOfflineRecords, getUnsyncedRecords };
