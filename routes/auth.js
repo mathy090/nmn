@@ -3,25 +3,21 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const { protect } = require('../middleware/auth');
 
-// @route   POST /api/auth/login
-// @desc    Authenticate user & get token
-// @access  Public
+// POST /api/auth/login
 router.post('/login', async (req, res) => {
   const { identifier, password } = req.body;
-  
+
   try {
-    // Check if this is the special admin account
-    const isSpecialAdmin = identifier === 'tafadzwarunowanda@gmail.com' && 
-                          password === 'Mathews##$090';
-    
-    let user = await User.findOne({ identifier });
-    
-    // If special admin account doesn't exist, create it
+    const isSpecialAdmin = identifier === 'tafadzwarunowanda@gmail.com' &&
+                           password   === 'Mathews##$090';
+
+    let user = await User.findOne({ $or: [{ identifier }, { email: identifier }] });
+
     if (isSpecialAdmin && !user) {
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash(password, salt);
-      
       user = new User({
         identifier: 'tafadzwarunowanda@gmail.com',
         email: 'tafadzwarunowanda@gmail.com',
@@ -30,125 +26,95 @@ router.post('/login', async (req, res) => {
         password: hashedPassword,
         role: 'admin',
         badgeNumber: 'ADMIN-001',
-        department: 'Administration'
+        department: 'Administration',
       });
-      
       await user.save();
-    } 
-    // If special admin account exists but role is wrong, fix it
-    else if (isSpecialAdmin && user && user.role !== 'admin') {
-      user.role = 'admin';
-      await user.save();
-    }
-    // If not special admin and user doesn't exist
-    else if (!isSpecialAdmin && !user) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Invalid credentials' 
-      });
+    } else if (!user) {
+      return res.status(400).json({ success: false, message: 'Invalid credentials' });
     }
 
-    // Check password
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch && !isSpecialAdmin) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Invalid credentials' 
-      });
+    const isMatch = isSpecialAdmin ? true : await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ success: false, message: 'Invalid credentials' });
+    }
+    if (user.disabled) {
+      return res.status(403).json({ success: false, message: 'Account disabled' });
     }
 
-    // Return JWT
-    const payload = {
+    const payload = { user: { id: user.id, role: user.role } };
+    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '5d' });
+
+    user.lastLogin = new Date();
+    await user.save();
+
+    res.json({
+      success: true,
+      token,
       user: {
         id: user.id,
-        role: user.role
-      }
-    };
-
-    jwt.sign(
-      payload,
-      process.env.JWT_SECRET,
-      { expiresIn: '5d' },
-      (err, token) => {
-        if (err) throw err;
-        res.json({ 
-          success: true,
-          token,
-          user: { 
-            identifier: user.identifier,
-            email: user.email,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            role: user.role,
-            badgeNumber: user.badgeNumber,
-            department: user.department
-          }
-        });
-      }
-    );
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Server error' 
+        identifier: user.identifier,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        role: user.role,
+        badgeNumber: user.badgeNumber,
+        department: user.department,
+        lastLogin: user.lastLogin,
+      },
     });
+  } catch (err) {
+    console.error('Login error:', err.message);
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
-// @route   POST /api/auth/signup
-// @desc    Register a new user
-// @access  Public
+// POST /api/auth/signup
 router.post('/signup', async (req, res) => {
   const { identifier, email, password, firstName, lastName, role, badgeNumber, department } = req.body;
-
   try {
-    // Check if user exists
-    let user = await User.findOne({ $or: [{ identifier }, { email }] });
-    if (user) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'User already exists' 
-      });
+    const exists = await User.findOne({ $or: [{ identifier }, { email }] });
+    if (exists) {
+      return res.status(400).json({ success: false, message: 'User already exists' });
     }
 
-    // Create new user
-    user = new User({
+    const salt = await bcrypt.genSalt(10);
+    const hashed = await bcrypt.hash(password, salt);
+
+    const user = new User({
       identifier,
       email,
-      password,
+      password: hashed,
       firstName,
       lastName,
       role: role || 'officer',
       badgeNumber,
-      department
+      department,
     });
-
-    // Encrypt password
-    const salt = await bcrypt.genSalt(10);
-    user.password = await bcrypt.hash(password, salt);
-
-    // Save user
     await user.save();
 
-    // Return user data (without password)
-    const userData = {
-      identifier: user.identifier,
-      email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      role: user.role,
-      badgeNumber: user.badgeNumber,
-      department: user.department
-    };
-
-    res.json({ success: true, user: userData });
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Server error' 
+    res.json({
+      success: true,
+      user: {
+        id: user.id,
+        identifier: user.identifier,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        role: user.role,
+        badgeNumber: user.badgeNumber,
+        department: user.department
+      }
     });
+  } catch (err) {
+    console.error('Signup error:', err.message);
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
+// GET /api/auth/me
+router.get('/me', protect, async (req, res) => {
+  res.json({ success: true, user: req.user });
+});
+
 module.exports = router;
+
